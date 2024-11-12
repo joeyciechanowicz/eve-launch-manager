@@ -1,10 +1,14 @@
 package main
 
 import (
+	"archive/zip"
 	"fmt"
 	"io"
 	"os"
+	"path"
+	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -52,7 +56,8 @@ func (i item) FilterValue() string { return i.title }
 
 // Message types
 type backupCompleteMsg struct {
-	err error
+	err      error
+	filename string
 }
 type switchedProfileMsg struct {
 	err error
@@ -77,7 +82,7 @@ func initialModel() model {
 	mainList.SetShowStatusBar(false)
 	mainList.SetFilteringEnabled(false)
 	mainList.SetShowPagination(false)
-	mainList.StatusMessageLifetime = time.Second * 5
+	mainList.StatusMessageLifetime = time.Second * 3
 
 	profileList := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 	profileList.Title = "Select Profile"
@@ -131,8 +136,58 @@ func performInitialLoad() tea.Cmd {
 // Simulate backup process
 func performBackup() tea.Cmd {
 	return tea.Cmd(func() tea.Msg {
-		time.Sleep(time.Second * 5)
-		return backupCompleteMsg{}
+		// It confuses me if this happens to quickly. I think it hasn't worked
+		time.Sleep(1 * time.Second)
+
+		home, _ := os.UserHomeDir()
+		destinationPath := path.Join(home, fmt.Sprintf("eve-settings-%s.zip", time.Now().Format("2006-01-02_15-04")))
+		destinationFile, err := os.Create(destinationPath)
+		if err != nil {
+			return backupCompleteMsg{
+				err: err,
+			}
+		}
+		defer destinationFile.Close()
+
+		pathToZip := getEvePath()
+
+		myZip := zip.NewWriter(destinationFile)
+		err = filepath.Walk(pathToZip, func(filePath string, info os.FileInfo, err error) error {
+			if info.IsDir() {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			relPath := strings.TrimPrefix(filePath, filepath.Dir(pathToZip))
+			zipFile, err := myZip.Create(relPath)
+			if err != nil {
+				return err
+			}
+			fsFile, err := os.Open(filePath)
+			if err != nil {
+				return err
+			}
+			_, err = io.Copy(zipFile, fsFile)
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+		if err != nil {
+			return backupCompleteMsg{
+				err: err,
+			}
+		}
+		err = myZip.Close()
+		if err != nil {
+			return backupCompleteMsg{
+				err: err,
+			}
+		}
+		return backupCompleteMsg{
+			filename: destinationPath,
+		}
 	})
 }
 
@@ -249,13 +304,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case backupCompleteMsg:
 		m.currentScreen = mainScreen
 
-		return m, m.mainList.NewStatusMessage("Backup completed successfully!")
+		if msg.err != nil {
+			return m, m.mainList.NewStatusMessage(msg.err.Error())
+		}
+
+		return m, m.mainList.NewStatusMessage(fmt.Sprintf("Created %s", msg.filename))
 
 	case switchedProfileMsg:
 		m.currentScreen = mainScreen
 
-		m.mainList.Title = fmt.Sprintf("EVE Launcher Manager (%s)", m.profileManager.Config.ActiveProfile)
 		m.UpdateLists()
+		if msg.err != nil {
+			return m, m.mainList.NewStatusMessage(msg.err.Error())
+		}
+
+		m.mainList.Title = fmt.Sprintf("EVE Launcher Manager (%s)", m.profileManager.Config.ActiveProfile)
 
 		return m, tea.Batch(m.mainList.NewStatusMessage(fmt.Sprintf("Switched to profile %s", m.switchToSelectedProfile)))
 
@@ -263,6 +326,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentScreen = mainScreen
 
 		m.UpdateLists()
+		if msg.err != nil {
+			return m, m.mainList.NewStatusMessage(msg.err.Error())
+		}
+
 		return m, tea.Batch(m.mainList.NewStatusMessage(fmt.Sprintf("Created profile %s", m.newProfileName)))
 	}
 

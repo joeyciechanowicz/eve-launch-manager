@@ -1,11 +1,11 @@
 (tea.WindowSizeMsg) {
- Width: (int) 134,
+ Width: (int) 143,
  Height: (int) 27
 }
 (main.initLoadCompleteMsg) {
- profileManager: (*main.ProfileManager)(0x140000f9e60)({
+ profileManager: (*main.ProfileManager)(0x14000180540)({
   Config: (main.Config) {
-   ActiveProfile: (string) (len=4) "main",
+   ActiveProfile: (string) (len=4) "asdf",
    Profiles: ([]string) (len=3 cap=4) {
     (string) (len=4) "main",
     (string) (len=4) "asdf",
@@ -16,13 +16,83 @@
  err: (error) <nil>
 }
 (tea.KeyMsg) down
+(tea.KeyMsg) down
+(tea.KeyMsg) enter
+(main.backupCompleteMsg) {
+ err: (error) <nil>,
+ filename: (string) (len=51) "/Users/uk45110465/eve-settings-2024-11-12_20-29.zip"
+}
+(list.statusMessageTimeoutMsg) {
+}
 (tea.KeyMsg) up
+(tea.KeyMsg) up
+(tea.KeyMsg) enter
+(tea.KeyMsg) down
+(tea.KeyMsg) down
+(tea.KeyMsg) enter
+(main.switchedProfileMsg) {
+ err: (error) <nil>
+}
+(tea.KeyMsg) enter
+(tea.KeyMsg) up
+(tea.KeyMsg) up
+(tea.KeyMsg) enter
+(main.switchedProfileMsg) {
+ err: (error) <nil>
+}
 (tea.KeyMsg) enter
 (tea.KeyMsg) down
 (tea.KeyMsg) enter
 (main.switchedProfileMsg) {
  err: (error) <nil>
 }
+(tea.KeyMsg) down
+(tea.KeyMsg) enter
+(tea.KeyMsg) a
+(tea.KeyMsg) s
+(cursor.blinkCanceled) {
+}
 (list.statusMessageTimeoutMsg) {
 }
-(tea.KeyMsg) ctrl+c
+(tea.KeyMsg) d
+(cursor.blinkCanceled) {
+}
+(tea.KeyMsg) f
+(cursor.blinkCanceled) {
+}
+(tea.KeyMsg) enter
+(cursor.BlinkMsg) {
+ id: (int) 0,
+ tag: (int) 5
+}
+(cursor.BlinkMsg) {
+ id: (int) 0,
+ tag: (int) 6
+}
+(cursor.BlinkMsg) {
+ id: (int) 0,
+ tag: (int) 7
+}
+(cursor.BlinkMsg) {
+ id: (int) 0,
+ tag: (int) 8
+}
+(tea.KeyMsg) f
+(cursor.blinkCanceled) {
+}
+(tea.KeyMsg) enter
+(cursor.BlinkMsg) {
+ id: (int) 0,
+ tag: (int) 10
+}
+(tea.KeyMsg) down
+(tea.KeyMsg) down
+(tea.KeyMsg) down
+(tea.KeyMsg) enter
+(main.createdProfileMsg) {
+ err: (error) <nil>
+}
+(tea.KeyMsg) down
+(list.statusMessageTimeoutMsg) {
+}
+(tea.KeyMsg) q
