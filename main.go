@@ -1,14 +1,10 @@
 package main
 
 import (
-	"archive/zip"
 	"fmt"
 	"io"
 	"os"
-	"path"
-	"path/filepath"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -32,17 +28,18 @@ const (
 )
 
 type model struct {
-	profileManager          *ProfileManager
-	currentScreen           screen
-	mainList                list.Model
-	profileList             list.Model
 	baseProfileList         list.Model
-	profileNameInput        textinput.Model
-	newProfileName          string
+	currentScreen           screen
+	dump                    io.Writer
 	err                     error
+	isEveRunning            bool
+	mainList                list.Model
+	newProfileName          string
+	profileList             list.Model
+	profileManager          *ProfileManager
+	profileNameInput        textinput.Model
 	spinner                 spinner.Model
 	switchToSelectedProfile string
-	dump                    io.Writer
 }
 
 type item struct {
@@ -68,6 +65,9 @@ type initLoadCompleteMsg struct {
 }
 type createdProfileMsg struct {
 	err error
+}
+type checkProcessMsg struct {
+	running bool
 }
 
 func initialModel() model {
@@ -133,64 +133,6 @@ func performInitialLoad() tea.Cmd {
 	})
 }
 
-// Simulate backup process
-func performBackup() tea.Cmd {
-	return tea.Cmd(func() tea.Msg {
-		// It confuses me if this happens to quickly. I think it hasn't worked
-		time.Sleep(1 * time.Second)
-
-		home, _ := os.UserHomeDir()
-		destinationPath := path.Join(home, fmt.Sprintf("eve-settings-%s.zip", time.Now().Format("2006-01-02_15-04")))
-		destinationFile, err := os.Create(destinationPath)
-		if err != nil {
-			return backupCompleteMsg{
-				err: err,
-			}
-		}
-		defer destinationFile.Close()
-
-		pathToZip := getEvePath()
-
-		myZip := zip.NewWriter(destinationFile)
-		err = filepath.Walk(pathToZip, func(filePath string, info os.FileInfo, err error) error {
-			if info.IsDir() {
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-			relPath := strings.TrimPrefix(filePath, filepath.Dir(pathToZip))
-			zipFile, err := myZip.Create(relPath)
-			if err != nil {
-				return err
-			}
-			fsFile, err := os.Open(filePath)
-			if err != nil {
-				return err
-			}
-			_, err = io.Copy(zipFile, fsFile)
-			if err != nil {
-				return err
-			}
-			return nil
-		})
-		if err != nil {
-			return backupCompleteMsg{
-				err: err,
-			}
-		}
-		err = myZip.Close()
-		if err != nil {
-			return backupCompleteMsg{
-				err: err,
-			}
-		}
-		return backupCompleteMsg{
-			filename: destinationPath,
-		}
-	})
-}
-
 // Simulate profile loading process
 func loadProfile(profileManager *ProfileManager, profile string) tea.Cmd {
 	return tea.Cmd(func() tea.Msg {
@@ -215,6 +157,7 @@ func (m model) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
 		performInitialLoad(),
+		checkProcess(),
 	)
 }
 
@@ -288,6 +231,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mainList.Update(msg)
 		}
 		return m, spinnerCmd
+
+	case checkProcessMsg:
+		m.isEveRunning = msg.running
+		return m, checkProcess()
 
 	case initLoadCompleteMsg:
 		init := initLoadCompleteMsg(msg)
@@ -398,6 +345,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
+	if m.isEveRunning {
+		return docStyle.Render(fmt.Sprintf("EVE Launcher is running, please close %s", m.spinner.View()))
+	}
+
 	var sections []string = []string{}
 
 	switch m.currentScreen {
