@@ -2,15 +2,17 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"regexp"
-	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/davecgh/go-spew/spew"
 )
 
 type screen int
@@ -26,19 +28,17 @@ const (
 )
 
 type model struct {
-	profileManager   ProfileManager
-	currentScreen    screen
-	mainList         list.Model
-	profileList      list.Model
-	baseProfileList  list.Model
-	profileNameInput textinput.Model
-	profileName      string
-	err              error
-	spinner          spinner.Model
-	statusMsg        string
-	width            int
-	height           int
-	selectedProfile  string
+	profileManager          *ProfileManager
+	currentScreen           screen
+	mainList                list.Model
+	profileList             list.Model
+	baseProfileList         list.Model
+	profileNameInput        textinput.Model
+	newProfileName          string
+	err                     error
+	spinner                 spinner.Model
+	switchToSelectedProfile string
+	dump                    io.Writer
 }
 
 type item struct {
@@ -51,58 +51,45 @@ func (i item) Description() string { return i.desc }
 func (i item) FilterValue() string { return i.title }
 
 // Message types
-type backupCompleteMsg struct{}
-type profileLoadedMsg struct{}
+type backupCompleteMsg struct {
+	err error
+}
+type switchedProfileMsg struct {
+	err error
+}
 type initLoadCompleteMsg struct {
-	profileManager ProfileManager
+	profileManager *ProfileManager
 	err            error
 }
-
-var docStyle = lipgloss.NewStyle().Margin(1, 2)
+type createdProfileMsg struct {
+	err error
+}
 
 func initialModel() model {
-	// Main menu items
-	mainItems := []list.Item{
+	// Initialize lists with dimensions
+	mainList := list.New([]list.Item{
 		item{title: "Load a profile", desc: "Load an existing profile"},
 		item{title: "Create a profile", desc: "Create a new profile"},
 		item{title: "Backup", desc: "Backup your profiles"},
-	}
-
-	// Profile list items
-	profileItems := []list.Item{
-		// item{title: "Profile1", desc: "Profile 1 description"},
-		// item{title: "Profile2", desc: "Profile 2 description"},
-		// item{title: "Profile3", desc: "Profile 3 description"},
-	}
-
-	// Set default list styles
-	defaultListStyles := list.DefaultStyles()
-	defaultListStyles.Title = defaultListStyles.Title.
-		Background(lipgloss.Color("62")).
-		Foreground(lipgloss.Color("230")).
-		Padding(0, 1)
-
-	// Initialize lists with dimensions
-	mainList := list.New(mainItems, list.NewDefaultDelegate(), 0, 0)
-	mainList.Title = "Main Menu"
-	mainList.SetShowTitle(true)
+	}, list.NewDefaultDelegate(), 0, 0)
+	mainList.Title = "EVE Launcher Manager"
 	mainList.SetShowFilter(false)
-	mainList.SetShowHelp(true)
-	mainList.Styles = defaultListStyles
+	mainList.SetShowStatusBar(false)
+	mainList.SetFilteringEnabled(false)
+	mainList.SetShowPagination(false)
+	mainList.StatusMessageLifetime = time.Second * 5
 
-	profileList := list.New(profileItems, list.NewDefaultDelegate(), 0, 0)
+	profileList := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 	profileList.Title = "Select Profile"
 	profileList.SetShowTitle(true)
 	profileList.SetShowFilter(false)
 	profileList.SetShowHelp(true)
-	profileList.Styles = defaultListStyles
 
-	baseProfileList := list.New(profileItems, list.NewDefaultDelegate(), 0, 0)
+	baseProfileList := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 	baseProfileList.Title = "Select Base Profile"
 	baseProfileList.SetShowTitle(true)
 	baseProfileList.SetShowFilter(false)
 	baseProfileList.SetShowHelp(true)
-	baseProfileList.Styles = defaultListStyles
 
 	// Initialize text input
 	ti := textinput.New()
@@ -113,7 +100,7 @@ func initialModel() model {
 
 	// Initialize spinner
 	s := spinner.New()
-	s.Spinner = spinner.Dot
+	s.Spinner = spinner.Hamburger
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
 	return model{
@@ -123,8 +110,6 @@ func initialModel() model {
 		baseProfileList:  baseProfileList,
 		profileNameInput: ti,
 		spinner:          s,
-		width:            80,
-		height:           20,
 	}
 }
 
@@ -138,7 +123,7 @@ func performInitialLoad() tea.Cmd {
 			}
 		}
 		return initLoadCompleteMsg{
-			profileManager: *profileManager,
+			profileManager: profileManager,
 		}
 	})
 }
@@ -146,14 +131,27 @@ func performInitialLoad() tea.Cmd {
 // Simulate backup process
 func performBackup() tea.Cmd {
 	return tea.Cmd(func() tea.Msg {
+		time.Sleep(time.Second * 5)
 		return backupCompleteMsg{}
 	})
 }
 
 // Simulate profile loading process
-func loadProfile() tea.Cmd {
+func loadProfile(profileManager *ProfileManager, profile string) tea.Cmd {
 	return tea.Cmd(func() tea.Msg {
-		return profileLoadedMsg{}
+		err := profileManager.SwitchProfile(profile)
+		return switchedProfileMsg{
+			err: err,
+		}
+	})
+}
+
+func createProfile(profileManager *ProfileManager, profileName, baseProfile string) tea.Cmd {
+	return tea.Cmd(func() tea.Msg {
+		err := profileManager.CreateProfile(profileName, baseProfile)
+		return createdProfileMsg{
+			err: err,
+		}
 	})
 }
 
@@ -165,22 +163,55 @@ func (m model) Init() tea.Cmd {
 	)
 }
 
+func (m *model) UpdateLists() {
+	profiles := []list.Item{}
+	baseProfiles := []list.Item{}
+
+	baseProfiles = append(baseProfiles, item{title: "None", desc: "Create an empty profile"})
+	for _, profileName := range m.profileManager.Config.Profiles {
+		var desc string
+		if profileName == m.profileManager.Config.ActiveProfile {
+			desc = "Active"
+		}
+
+		profiles = append(profiles,
+			item{title: profileName, desc: desc},
+		)
+		baseProfiles = append(baseProfiles,
+			item{title: profileName, desc: desc},
+		)
+	}
+
+	m.mainList.Title = fmt.Sprintf("EVE Launcher Manager (%s)", m.profileManager.Config.ActiveProfile)
+	m.baseProfileList.SetItems(baseProfiles)
+	m.profileList.SetItems(profiles)
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if _, ok := msg.(spinner.TickMsg); !ok && m.dump != nil {
+		spew.Fdump(m.dump, msg)
+	}
+
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
-		m.mainList.SetSize(msg.Width-h, msg.Height-v)
-		m.profileList.SetSize(msg.Width-h, msg.Height-v)
-		m.baseProfileList.SetSize(msg.Width-h, msg.Height-v)
+		m.mainList.SetSize(msg.Width-h, (msg.Height - v))
+		m.profileList.SetSize(msg.Width-h, (msg.Height - v))
+		m.baseProfileList.SetSize(msg.Width-h, (msg.Height - v))
 
 		return m, nil
 
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+c", "q":
+		case "ctrl+c":
 			return m, tea.Quit
+		case "q":
+			if m.currentScreen == createProfileScreen {
+				// Don't allow escape during operations
+				return m, nil
+			}
 		case "esc":
 			if m.currentScreen == backupScreen ||
 				m.currentScreen == loadingProfileScreen ||
@@ -190,13 +221,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.currentScreen = mainScreen
 			m.err = nil
-			m.statusMsg = ""
-			return m, nil
+
+			return m, m.mainList.NewStatusMessage("")
 		}
 
 	case spinner.TickMsg:
 		var spinnerCmd tea.Cmd
 		m.spinner, spinnerCmd = m.spinner.Update(msg)
+
+		if m.currentScreen == mainScreen {
+			m.mainList.Update(msg)
+		}
 		return m, spinnerCmd
 
 	case initLoadCompleteMsg:
@@ -206,18 +241,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.profileManager = init.profileManager
 			m.currentScreen = mainScreen
+
+			m.UpdateLists()
 		}
 		return m, nil
 
 	case backupCompleteMsg:
 		m.currentScreen = mainScreen
-		m.statusMsg = "Backup completed successfully!"
-		return m, nil
 
-	case profileLoadedMsg:
+		return m, m.mainList.NewStatusMessage("Backup completed successfully!")
+
+	case switchedProfileMsg:
 		m.currentScreen = mainScreen
-		m.statusMsg = fmt.Sprintf("Switched to profile %s", m.selectedProfile)
-		return m, nil
+
+		m.mainList.Title = fmt.Sprintf("EVE Launcher Manager (%s)", m.profileManager.Config.ActiveProfile)
+		m.UpdateLists()
+
+		return m, tea.Batch(m.mainList.NewStatusMessage(fmt.Sprintf("Switched to profile %s", m.switchToSelectedProfile)))
+
+	case createdProfileMsg:
+		m.currentScreen = mainScreen
+
+		m.UpdateLists()
+		return m, tea.Batch(m.mainList.NewStatusMessage(fmt.Sprintf("Created profile %s", m.newProfileName)))
 	}
 
 	switch m.currentScreen {
@@ -242,11 +288,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.profileList, cmd = m.profileList.Update(msg)
 		if msg, ok := msg.(tea.KeyMsg); ok && msg.String() == "enter" {
 			selected := m.profileList.SelectedItem()
-			m.selectedProfile = selected.FilterValue()
+			m.switchToSelectedProfile = selected.FilterValue()
 			m.currentScreen = loadingProfileScreen
 			return m, tea.Batch(
 				m.spinner.Tick,
-				loadProfile(),
+				loadProfile(m.profileManager, m.switchToSelectedProfile),
 			)
 		}
 
@@ -258,11 +304,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg, ok := msg.(tea.KeyMsg); ok {
 			switch msg.String() {
 			case "enter":
-				if isValidProfileName(m.profileNameInput.Value()) {
-					m.profileName = m.profileNameInput.Value()
+				if isValidProfileName(m.profileNameInput.Value(), m) {
+					m.newProfileName = m.profileNameInput.Value()
+					m.baseProfileList.Title = fmt.Sprintf("Select Base Profile for '%s'", m.newProfileName)
 					m.currentScreen = selectBaseProfileScreen
 				} else {
-					m.err = fmt.Errorf("profile name must contain only alphanumeric characters")
+					m.err = fmt.Errorf("profile name must be unique and contain only alphanumeric characters")
 				}
 			}
 		}
@@ -271,8 +318,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.baseProfileList, cmd = m.baseProfileList.Update(msg)
 		if msg, ok := msg.(tea.KeyMsg); ok && msg.String() == "enter" {
 			selected := m.baseProfileList.SelectedItem()
-			fmt.Printf("Created profile '%s' based on '%s'\n", m.profileName, selected.FilterValue())
-			return m, tea.Quit
+
+			if selected.FilterValue() == "None" {
+				return m, createProfile(m.profileManager, m.newProfileName, "")
+			} else {
+				return m, createProfile(m.profileManager, m.newProfileName, selected.FilterValue())
+			}
 		}
 	}
 
@@ -280,61 +331,74 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	var sb strings.Builder
-
-	// Always show status message at the top if it exists
-	if m.statusMsg != "" {
-		sb.WriteString(lipgloss.NewStyle().
-			Foreground(lipgloss.Color("42")). // Green color
-			Render(m.statusMsg) + "\n\n")
-	}
+	var sections []string = []string{}
 
 	switch m.currentScreen {
 	case initLoadingScreen:
 		if m.err != nil {
-			sb.WriteString(fmt.Sprintf("Error initializing: %s", m.err.Error()))
+			sections = append(sections, fmt.Sprintf("Error initializing: %s", m.err.Error()))
 		} else {
-			sb.WriteString(fmt.Sprintf("Initializing... %s", m.spinner.View()))
+			sections = append(sections, highlightedTextStyle.Render(fmt.Sprintf("Initializing... %s", m.spinner.View())))
 		}
 
 	case mainScreen:
-		return sb.String() + "\n" + m.mainList.View()
+		sections = append(sections, m.mainList.View())
 
 	case loadProfileScreen:
-		return sb.String() + "\n" + m.profileList.View()
+		sections = append(sections, m.profileList.View())
 
 	case createProfileScreen:
-		sb.WriteString("Enter profile name:\n")
-		sb.WriteString(m.profileNameInput.View())
+
+		sections = append(sections, highlightedTextStyle.Render("Enter profile name:"))
+		sections = append(sections, m.profileNameInput.View())
 		if m.err != nil {
-			sb.WriteString("Error: " + m.err.Error())
+			sections = append(sections, errorTextStyle.Render("Error: "+m.err.Error()))
 		}
 
 	case selectBaseProfileScreen:
-		sb.WriteString("Select base profile for '" + m.profileName + "':")
-		sb.WriteString(m.baseProfileList.View())
+		sections = append(sections, m.baseProfileList.View())
 
 	case backupScreen:
-		sb.WriteString("Backing up profiles... ")
-		sb.WriteString(m.spinner.View())
+		sections = append(sections, highlightedTextStyle.Render("Backing up profiles..."+m.spinner.View()+" "))
 
 	case loadingProfileScreen:
-		sb.WriteString(fmt.Sprintf("Loading profile %s... ", m.selectedProfile))
-		sb.WriteString(m.spinner.View())
+
+		sections = append(sections, highlightedTextStyle.Render(fmt.Sprintf("Loading profile %s... %s", m.switchToSelectedProfile, m.spinner.View())))
 	}
 
-	return docStyle.Render(sb.String())
+	return docStyle.Render(lipgloss.JoinVertical(lipgloss.Left, sections...))
 }
 
-func isValidProfileName(name string) bool {
+func isValidProfileName(name string, m model) bool {
+	if name == "None" {
+		return false
+	}
+
+	for _, profileName := range m.profileManager.Config.Profiles {
+		if name == profileName {
+			return false
+		}
+	}
+
 	match, _ := regexp.MatchString("^[a-zA-Z0-9\\-_]+$", name)
 	return match
 }
 
 func main() {
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	var dump *os.File
+	if _, ok := os.LookupEnv("DEBUG"); ok {
+		var err error
+		dump, err = os.OpenFile("messages.log", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+		if err != nil {
+			os.Exit(1)
+		}
+	}
+	m := initialModel()
+	m.dump = dump
+	p := tea.NewProgram(m)
+
 	if _, err := p.Run(); err != nil {
-		fmt.Printf("Error running program: %v", err)
+		fmt.Println("could not start program:", err)
 		os.Exit(1)
 	}
 }

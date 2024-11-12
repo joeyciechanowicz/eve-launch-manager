@@ -1,0 +1,28 @@
+(tea.WindowSizeMsg) {
+ Width: (int) 134,
+ Height: (int) 27
+}
+(main.initLoadCompleteMsg) {
+ profileManager: (*main.ProfileManager)(0x140000f9e60)({
+  Config: (main.Config) {
+   ActiveProfile: (string) (len=4) "main",
+   Profiles: ([]string) (len=3 cap=4) {
+    (string) (len=4) "main",
+    (string) (len=4) "asdf",
+    (string) (len=5) "asdf2"
+   }
+  }
+ }),
+ err: (error) <nil>
+}
+(tea.KeyMsg) down
+(tea.KeyMsg) up
+(tea.KeyMsg) enter
+(tea.KeyMsg) down
+(tea.KeyMsg) enter
+(main.switchedProfileMsg) {
+ err: (error) <nil>
+}
+(list.statusMessageTimeoutMsg) {
+}
+(tea.KeyMsg) ctrl+c
