@@ -79,7 +79,7 @@ func initialModel() model {
 	}, list.NewDefaultDelegate(), 0, 0)
 	mainList.Title = "EVE Launcher Manager"
 	mainList.SetShowFilter(false)
-	mainList.SetShowStatusBar(false)
+	mainList.SetShowStatusBar(true)
 	mainList.SetFilteringEnabled(false)
 	mainList.SetShowPagination(false)
 	mainList.StatusMessageLifetime = time.Second * 3
