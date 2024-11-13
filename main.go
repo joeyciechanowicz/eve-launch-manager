@@ -118,40 +118,6 @@ func initialModel() model {
 	}
 }
 
-// Simulate initial loading
-func performInitialLoad() tea.Cmd {
-	return tea.Cmd(func() tea.Msg {
-		profileManager, err := NewProfileManager()
-		if err != nil {
-			return initLoadCompleteMsg{
-				err: err,
-			}
-		}
-		return initLoadCompleteMsg{
-			profileManager: profileManager,
-		}
-	})
-}
-
-// Simulate profile loading process
-func loadProfile(profileManager *ProfileManager, profile string) tea.Cmd {
-	return tea.Cmd(func() tea.Msg {
-		err := profileManager.SwitchProfile(profile)
-		return switchedProfileMsg{
-			err: err,
-		}
-	})
-}
-
-func createProfile(profileManager *ProfileManager, profileName, baseProfile string) tea.Cmd {
-	return tea.Cmd(func() tea.Msg {
-		err := profileManager.CreateProfile(profileName, baseProfile)
-		return createdProfileMsg{
-			err: err,
-		}
-	})
-}
-
 func (m model) Init() tea.Cmd {
 	// Start with both the spinner and the initial loading timer
 	return tea.Batch(
