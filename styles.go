@@ -20,3 +20,7 @@ var statusMessageStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.Color("42"))
 
 var errorTextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
+
+var profileNameText = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(lipgloss.Color("#7D56F4"))

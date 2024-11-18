@@ -346,7 +346,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	if m.isEveRunning {
-		return docStyle.Render(fmt.Sprintf("EVE Launcher is running, please close %s", m.spinner.View()))
+		return docStyle.Render(fmt.Sprintf("EVE Launcher is running (%s), please close %s", profileNameText.Render(m.profileManager.Config.ActiveProfile), m.spinner.View()))
 	}
 
 	var sections []string = []string{}
