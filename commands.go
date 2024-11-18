@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -33,9 +34,6 @@ func checkProcess() tea.Cmd {
 // Simulate backup process
 func performBackup() tea.Cmd {
 	return tea.Cmd(func() tea.Msg {
-		// It confuses me if this happens to quickly. I think it hasn't worked
-		time.Sleep(1 * time.Second)
-
 		home, _ := os.UserHomeDir()
 		destinationPath := path.Join(home, fmt.Sprintf("eve-settings-%s.zip", time.Now().Format("2006-01-02_15-04")))
 		destinationFile, err := os.Create(destinationPath)
@@ -56,11 +54,18 @@ func performBackup() tea.Cmd {
 			if err != nil {
 				return err
 			}
+
+			match, _ := regexp.MatchString("state[a-zA-Z0-9\\-_]*\\.json$", filePath)
+			if !match {
+				return nil
+			}
+
 			relPath := strings.TrimPrefix(filePath, filepath.Dir(pathToZip))
 			zipFile, err := myZip.Create(relPath)
 			if err != nil {
 				return err
 			}
+
 			fsFile, err := os.Open(filePath)
 			if err != nil {
 				return err
@@ -84,6 +89,38 @@ func performBackup() tea.Cmd {
 		}
 		return backupCompleteMsg{
 			filename: destinationPath,
+		}
+	})
+}
+
+func performInitialLoad() tea.Cmd {
+	return tea.Cmd(func() tea.Msg {
+		profileManager, err := NewProfileManager()
+		if err != nil {
+			return initLoadCompleteMsg{
+				err: err,
+			}
+		}
+		return initLoadCompleteMsg{
+			profileManager: profileManager,
+		}
+	})
+}
+
+func loadProfile(profileManager *ProfileManager, profile string) tea.Cmd {
+	return tea.Cmd(func() tea.Msg {
+		err := profileManager.SwitchProfile(profile)
+		return switchedProfileMsg{
+			err: err,
+		}
+	})
+}
+
+func createProfile(profileManager *ProfileManager, profileName, baseProfile string) tea.Cmd {
+	return tea.Cmd(func() tea.Msg {
+		err := profileManager.CreateProfile(profileName, baseProfile)
+		return createdProfileMsg{
+			err: err,
 		}
 	})
 }
