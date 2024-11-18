@@ -1,6 +1,6 @@
 module github.com/joeyciechanowicz/eve-launch-manager
 
-go 1.22.1
+go 1.23
 
 require (
 	github.com/charmbracelet/bubbles v0.20.0
