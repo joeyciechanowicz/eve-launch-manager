@@ -37,9 +37,11 @@ type model struct {
 	newProfileName          string
 	profileList             list.Model
 	profileManager          *ProfileManager
-	profileNameInput        textinput.Model
+	ti                      textinput.Model
 	spinner                 spinner.Model
 	switchToSelectedProfile string
+	isRenaming              bool
+	showDeleteConfirm       bool
 }
 
 type item struct {
@@ -109,12 +111,14 @@ func initialModel() model {
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
 	return model{
-		currentScreen:    initLoadingScreen, // Start with loading screen
-		mainList:         mainList,
-		profileList:      profileList,
-		baseProfileList:  baseProfileList,
-		profileNameInput: ti,
-		spinner:          s,
+		baseProfileList:   baseProfileList,
+		currentScreen:     initLoadingScreen, // Start with loading screen
+		isRenaming:        false,
+		mainList:          mainList,
+		profileList:       profileList,
+		showDeleteConfirm: false,
+		spinner:           s,
+		ti:                ti,
 	}
 }
 
@@ -160,7 +164,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		h, v := docStyle.GetFrameSize()
+		h, v := appStyle.GetFrameSize()
 		m.mainList.SetSize(msg.Width-h, (msg.Height - v))
 		m.profileList.SetSize(msg.Width-h, (msg.Height - v))
 		m.baseProfileList.SetSize(msg.Width-h, (msg.Height - v))
@@ -183,10 +187,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Don't allow escape during operations
 				return m, nil
 			}
+			// Exit out of edit/delete
+			if m.showDeleteConfirm {
+				m.showDeleteConfirm = false
+				return m, nil
+			}
+			if m.isRenaming {
+				m.isRenaming = false
+				return m, nil
+			}
+
 			m.currentScreen = mainScreen
 			m.err = nil
 
-			return m, m.mainList.NewStatusMessage("")
+			return m, nil
 		}
 
 	case spinner.TickMsg:
@@ -278,14 +292,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case createProfileScreen:
 		var tiCmd tea.Cmd
-		m.profileNameInput, tiCmd = m.profileNameInput.Update(msg)
+		m.ti, tiCmd = m.ti.Update(msg)
 		cmd = tiCmd
 
 		if msg, ok := msg.(tea.KeyMsg); ok {
 			switch msg.String() {
 			case "enter":
-				if isValidProfileName(m.profileNameInput.Value(), m) {
-					m.newProfileName = m.profileNameInput.Value()
+				if isValidProfileName(m.ti.Value(), m) {
+					m.newProfileName = m.ti.Value()
 					m.baseProfileList.Title = fmt.Sprintf("Select Base Profile for '%s'", m.newProfileName)
 					m.currentScreen = selectBaseProfileScreen
 				} else {
@@ -312,7 +326,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	if m.isEveRunning {
-		return docStyle.Render(fmt.Sprintf("EVE Launcher is running, please close %s", m.spinner.View()))
+		return appStyle.Render(fmt.Sprintf("EVE Launcher is running, please close %s", m.spinner.View()))
 	}
 
 	var sections []string = []string{}
@@ -334,7 +348,7 @@ func (m model) View() string {
 	case createProfileScreen:
 
 		sections = append(sections, highlightedTextStyle.Render("Enter profile name:"))
-		sections = append(sections, m.profileNameInput.View())
+		sections = append(sections, m.ti.View())
 		if m.err != nil {
 			sections = append(sections, errorTextStyle.Render("Error: "+m.err.Error()))
 		}
@@ -350,7 +364,7 @@ func (m model) View() string {
 		sections = append(sections, highlightedTextStyle.Render(fmt.Sprintf("Loading profile %s... %s", m.switchToSelectedProfile, m.spinner.View())))
 	}
 
-	return docStyle.Render(lipgloss.JoinVertical(lipgloss.Left, sections...))
+	return appStyle.Render(lipgloss.JoinVertical(lipgloss.Left, sections...))
 }
 
 func isValidProfileName(name string, m model) bool {
