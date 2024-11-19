@@ -89,6 +89,7 @@ func initialModel() model {
 	profileList.SetShowTitle(true)
 	profileList.SetShowFilter(false)
 	profileList.SetShowHelp(true)
+	mainList.SetShowPagination(true)
 
 	baseProfileList := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 	baseProfileList.Title = "Select Base Profile"
